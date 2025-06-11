@@ -1,0 +1,160 @@
+import pyttsx3
+import speech_recognition as sr
+import keyboard
+import threading
+import time
+import pyaudio
+
+tts_engine = pyttsx3.init()
+tts_engine.setProperty('rate', 150)
+tts_engine.setProperty('volume', 0.9)
+
+class VoiceAssistant:
+    def __init__(self):
+        self.recognizer = sr.Recognizer()
+        self.is_recording = False
+        self.audio_data = None
+        self.recording_thread = None
+        
+        # PyAudio settings
+        self.chunk = 1024
+        self.format = pyaudio.paInt16
+        self.channels = 1
+        self.rate = 44100
+        
+        print("Voice assistant initialized and ready!")
+
+    def speak(self, text):
+        """Convert text to speech"""
+        tts_engine.say(text)
+        tts_engine.runAndWait()
+
+    def start_recording(self):
+        """Start recording audio"""
+        if not self.is_recording:
+            self.is_recording = True
+            print("🔴 Recording started... Press 'G' again to stop.")
+            self.recording_thread = threading.Thread(target=self._record_with_pyaudio)
+            self.recording_thread.start()
+
+    def stop_recording(self):
+        """Stop recording audio"""
+        if self.is_recording:
+            self.is_recording = False
+            print("⏹️ Recording stopped. Processing...")
+            if self.recording_thread:
+                self.recording_thread.join()
+            self._process_audio()
+
+    def _record_with_pyaudio(self):
+        """Record audio using PyAudio"""
+        try:
+            audio = pyaudio.PyAudio()
+            
+            stream = audio.open(
+                format=self.format,
+                channels=self.channels,
+                rate=self.rate,
+                input=True,
+                frames_per_buffer=self.chunk
+            )
+            
+            frames = []
+            
+            while self.is_recording:
+                data = stream.read(self.chunk)
+                frames.append(data)
+            
+            stream.stop_stream()
+            stream.close()
+            audio.terminate()
+            
+            # Convert to speech_recognition AudioData format
+            audio_data = b''.join(frames)
+            self.audio_data = sr.AudioData(audio_data, self.rate, 2)  # 2 bytes per sample for 16-bit
+            
+        except Exception as e:
+            print(f"Recording error: {e}")
+            self.is_recording = False
+
+    def _process_audio(self):
+        """Process the recorded audio"""
+        if self.audio_data is None:
+            print("No audio data to process.")
+            return
+
+        try:
+            print("🔄 Converting speech to text...")
+            text = self.recognizer.recognize_google(self.audio_data)
+            print(f"📝 You said: '{text}'")
+            
+            # Play back what was said
+            self.speak(f"You said: {text}")
+            
+            # Process the command
+            self._handle_command(text.lower())
+            
+        except sr.UnknownValueError:
+            print("❌ Sorry, I couldn't understand the audio.")
+            self.speak("Sorry, I couldn't understand what you said.")
+        except sr.RequestError as e:
+            print(f"❌ Speech recognition service error: {e}")
+            self.speak("Sorry, there was an error with the speech service.")
+        
+        # Reset audio data
+        self.audio_data = None
+
+    def _handle_command(self, command):
+        """Handle voice commands"""
+        if "exit" in command or "quit" in command or "stop" in command:
+            self.speak("Goodbye!")
+            return "exit"
+        elif "your name" in command or "who are you" in command:
+            self.speak("I'm your Python voice assistant.")
+        elif "time" in command:
+            from datetime import datetime
+            current_time = datetime.now().strftime("%I:%M %p")
+            self.speak(f"The current time is {current_time}")
+        elif "hello" in command or "hi" in command:
+            self.speak("Hello! How can I help you?")
+        else:
+            self.speak("I heard you, but I'm still learning to respond to that command.")
+
+    def toggle_recording(self):
+        """Toggle recording state"""
+        if self.is_recording:
+            self.stop_recording()
+        else:
+            self.start_recording()
+
+def main():
+    assistant = VoiceAssistant()
+    
+    print("\n🎤 PyAudio Push-to-Talk Voice Assistant")
+    print("=" * 45)
+    print("📋 Instructions:")
+    print("  • Press 'G' to start recording")
+    print("  • Press 'G' again to stop recording and process")
+    print("  • Press 'Ctrl+C' to exit")
+    print("\n💡 Available commands:")
+    print("  • Ask my name / Who are you")
+    print("  • What time is it")
+    print("  • Hello / Hi")
+    print("  • Exit / Quit / Stop")
+    print("\n⏳ Waiting for 'G' key press...")
+    
+    assistant.speak("Voice assistant ready. Press G to start recording.")
+    
+    try:
+        while True:
+            keyboard.wait('g')
+            assistant.toggle_recording()
+            time.sleep(0.2)  # Prevent rapid key presses
+            
+    except KeyboardInterrupt:
+        print("\n\n👋 Exiting voice assistant...")
+        if assistant.is_recording:
+            assistant.stop_recording()
+
+if __name__ == "__main__":
+    main()
